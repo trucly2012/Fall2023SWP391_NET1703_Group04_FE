@@ -5,56 +5,65 @@ import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
-import { MultiSelect } from 'primereact/multiselect';
-import 'primereact/resources/themes/saga-blue/theme.css';
-import 'primereact/resources/primereact.min.css';
-import authHeader from "../../AuthHeader/AuthHeader";
-import 'primeicons/primeicons.css';
-import '/node_modules/primeflex/primeflex.css';
-import { FilterMatchMode, FilterOperator } from 'primereact/api';
 import { Dropdown } from 'primereact/dropdown';
 import { Toast } from 'primereact/toast';
 import { InputTextarea } from 'primereact/inputtextarea';
-import ModalUpdateCage from './ModalUpdateCage';
+import 'primereact/resources/themes/saga-blue/theme.css';
+import 'primereact/resources/primereact.min.css';
+import 'primeicons/primeicons.css';
+import '/node_modules/primeflex/primeflex.css';
+import { FilterMatchMode, FilterOperator } from 'primereact/api';
 import { useNavigate } from 'react-router-dom';
+import ModalUpdateCage from './ModalUpdateCage';
 
 const ManageCage = () => {
     const navigate = useNavigate();
-
-    if (
-        !JSON.parse(localStorage.getItem("user")) ||
-        (
-            JSON.parse(localStorage.getItem("user"))?.data?.role !== 'ROLE_ADMIN' &&
-            JSON.parse(localStorage.getItem("user"))?.data?.role !== 'ROLE_STAFF'
-        )
-    ) {
-        navigate("/notfound");
-    }
     const [cages, setCages] = useState([]);
-    const [refresh, setRefresh] = useState(false);
     const [areas, setAreas] = useState([]);
-    const [selectedArea, setSelectedArea] = useState([]);
-    const [newCage, setNewCage] = useState([]);
+    const [selectedArea, setSelectedArea] = useState(null);
+    const [newCage, setNewCage] = useState({
+        animalCageName: '',
+        description: '',
+        maxQuantity: '',
+        areaId: null
+    });
     const [displayDialog, setDisplayDialog] = useState(false);
     const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [data, setData] = useState({})
+    const [data, setData] = useState({});
+    const [confirmationDialog, setConfirmationDialog] = useState({
+        visible: false,
+        action: null,
+        message: '',
+        params: null
+    });
     const toast = useRef(null);
     const [globalFilterValue, setGlobalFilterValue] = useState('');
-
-
-    //Search by animals name
     const [filters, setFilters] = useState({
-        'global': { value: null, matchMode: FilterMatchMode.CONTAINS },
-        'animalName': { operator: FilterOperator.AND, constraints: [{ value: null, matchMode: FilterMatchMode.STARTS_WITH }] },
-
+        global: { value: null, matchMode: FilterMatchMode.CONTAINS },
+        animalName: { operator: FilterOperator.AND, constraints: [{ value: null, matchMode: FilterMatchMode.STARTS_WITH }] },
     });
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const [cageResponse, areaResponse] = await Promise.all([
+                    axios.get('http://localhost:8081/api/v1/animalCage/getAllAnimalCage'),
+                    axios.get('http://localhost:8081/api/v1/area/all')
+                ]);
+                setCages(cageResponse.data.catalogueDTO);
+                setAreas(areaResponse.data.area); // Adjust if needed based on actual response structure
+            } catch (error) {
+                console.error("Fetch data error:", error);
+            }
+        };
+
+        fetchData();
+    }, []);
 
     const initFilters = () => {
         setFilters({
             global: { value: null, matchMode: FilterMatchMode.CONTAINS },
             animalName: { operator: FilterOperator.AND, constraints: [{ value: null, matchMode: FilterMatchMode.STARTS_WITH }] },
-
         });
         setGlobalFilterValue('');
     };
@@ -65,144 +74,134 @@ const ManageCage = () => {
 
     const onGlobalFilterChange = (e) => {
         const value = e.target.value;
-        let _filters = { ...filters };
-
-        _filters['global'].value = value;
-
-        setFilters(_filters);
+        setFilters(prevFilters => ({
+            ...prevFilters,
+            global: { value }
+        }));
         setGlobalFilterValue(value);
     };
 
-    const renderHeader = () => {
-        return (
-            <div className="flex justify-content-between">
-                <Button
-                    label="Add"
-                    icon="pi pi-plus"
-                    className="p-button-primary absolute"
-                    onClick={() => setDisplayDialog(true)}
-                />
-                <Button className='ml-auto' type="button" icon="pi pi-filter-slash" label="Clear" outlined onClick={clearFilter} />
-                <span className="p-input-icon-left">
-                    <i className="pi pi-search" />
-                    <InputText value={globalFilterValue} onChange={onGlobalFilterChange} placeholder="Search by name" />
-                </span>
-            </div>
-        );
-    };
+    const renderHeader = () => (
+        <div className="flex justify-content-between align-items-center">
+            <Button
+                label="Add"
+                icon="pi pi-plus"
+                className="p-button-primary"
+                onClick={() => setDisplayDialog(true)}
+            />
+            <Button className='ml-auto' type="button" icon="pi pi-filter-slash" label="Clear" outlined onClick={clearFilter} />
+            <span className="p-input-icon-left">
+                <i className="pi pi-search" />
+                <InputText value={globalFilterValue} onChange={onGlobalFilterChange} placeholder="Search by name" />
+            </span>
+        </div>
+    );
 
-
-    // Fetch diet data
-    useEffect(() => {
-        axios
-            .get('http://localhost:8080/zoo-server/api/v1/animalCage/getAllAnimalCage', { headers: authHeader() })
-            .then((response) => {
-                setCages(response.data.data);
-                setRefresh(false)
-            })
-            .catch((error) => {
-                console.error(error);
-            });
-        axios
-            .get('http://localhost:8080/zoo-server/api/v1/area/getAllAreas', { headers: authHeader() })
-            .then((response) => {
-                setAreas(response.data);
-                setRefresh(false)
-            })
-            .catch((error) => {
-                console.error(error);
-            });
-    }, [refresh]);
-
-    //Add Cage
     const handleInputChange = (event) => {
         const { name, value } = event.target;
-        setNewCage({
-            ...newCage,
+        setNewCage(prevCage => ({
+            ...prevCage,
             [name]: value
-        });
-    }
-
-    const handleSelectedChange = (event, name) => {
-        console.log(event, name);
-        setSelectedArea(event.value);
-        setNewCage({
-            ...newCage,
-            areaId: event.target.value.areaId
-        });
-    }
-
-    const handleAddCage = async () => {
-        await axios
-            .post('http://localhost:8080/zoo-server/api/v1/animalCage/createNewAnimalCage', newCage, { headers: authHeader() })
-            .then((response) => {
-                show(response.data.message, 'green');
-                setDisplayDialog(false);
-                setRefresh(true)
-                setSelectedArea([])
-            })
-            .catch((error) => {
-                console.error(error);
-            });
+        }));
     };
 
-    //delete
-    const handleDeleteCage = (cageId) => {
-        axios
-            .delete(`http://localhost:8080/zoo-server/api/v1/animalCage/deleteAnimalCage/${cageId}`, { headers: authHeader() })
-            .then((response) => {
-                show(response.data.message, 'green');
-                setRefresh(true)
-            })
-            .catch((error) => {
-                console.error(error);
+    const handleSelectedChange = (event) => {
+        const selectedArea = event.value;
+        setSelectedArea(selectedArea);
+        setNewCage(prevCage => ({
+            ...prevCage,
+            areaId: selectedArea?.areaId || null
+        }));
+    };
+
+    const handleAddCage = async () => {
+        try {
+            const response = await axios.post('http://localhost:8081/api/v1/animalCage/createNewAnimalCage', newCage);
+            show(response.data.message, 'green');
+            setDisplayDialog(false);
+            setNewCage({
+                animalCageName: '',
+                description: '',
+                maxQuantity: '',
+                areaId: null
             });
-    }
+        } catch (error) {
+            console.error("Add cage error:", error);
+        }
+    };
+
+    const handleDeleteCage = (cageId) => {
+        setConfirmationDialog({
+            visible: true,
+            action: () => deleteCage(cageId),
+            message: 'Are you sure you want to delete this cage?'
+        });
+    };
+
+    const deleteCage = async (cageId) => {
+        try {
+            const response = await axios.delete(`http://localhost:8081/api/v1/animalCage/deleteAnimalCage/${cageId}`);
+            show(response.data.message, 'green');
+        } catch (error) {
+            console.error("Delete cage error:", error);
+        }
+    };
+
+    const show = (message, color) => {
+        toast.current.show({
+            summary: 'Notification',
+            detail: message,
+            life: 3000,
+            style: { backgroundColor: color, color: 'white' },
+        });
+    };
+
+    const handleClose = () => {
+        setIsUpdateModalOpen(false);
+    };
+
+    const openUpdateModal = (cage) => {
+        setData(cage);
+        setIsUpdateModalOpen(true);
+    };
 
     const header = renderHeader();
 
     const paginatorLeft = <Button type="button" icon="pi pi-refresh" text />;
-    const paginatorRight = <Button type="button" onClick={() => setIsModalOpen(true)} icon="pi pi-plus" text label='Add' />;
+    const paginatorRight = <Button type="button" onClick={() => setDisplayDialog(true)} icon="pi pi-plus" text label='Add' />;
 
-    const show = (message, color) => {
-        toast.current.show({
-            summary: 'Notifications', detail: message, life: 3000,
-            style: { backgroundColor: color, color: 'white', border: '2px solid yellow' },
-        });
-    };
-
-    //update cage
-    const handleClose = () => {
-        setIsUpdateModalOpen(false)
-        setRefresh(true)
-    }
-    const openUpdateModal = (rowData) => {
-        setData(rowData)
-        setIsUpdateModalOpen(true)
-
-    }
     return (
-        <div style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center" }}>
+        <div className="p-d-flex p-jc-center p-ai-center" style={{ width: "100%", padding: '20px' }}>
             <Toast ref={toast} />
-            {ModalUpdateCage(data, isUpdateModalOpen, handleClose)}
-            <div style={{ width: "90%", justifySelf: "center" }}>
-                <h1>Cage Management</h1>
-                <DataTable value={cages} stripedRows
-                    paginator rows={5} rowsPerPageOptions={[5, 10, 25, 50]} header={header} tableStyle={{ minWidth: '50rem' }}
+            {isUpdateModalOpen && <ModalUpdateCage data={data} isModalOpen={isUpdateModalOpen} handleClose={handleClose} />}
+            <div style={{ width: "90%", maxWidth: '1200px' }}>
+                <h1 className="p-text-center mb-4">Cage Management</h1>
+                <DataTable
+                    value={cages}
+                    stripedRows
+                    paginator
+                    rows={5}
+                    rowsPerPageOptions={[5, 10, 25, 50]}
+                    header={header}
+                    tableStyle={{ minWidth: '50rem' }}
                     paginatorTemplate="RowsPerPageDropdown FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
-                    currentPageReportTemplate="{first} to {last} of {totalRecords}" paginatorLeft={paginatorLeft} paginatorRight={paginatorRight}>
+                    currentPageReportTemplate="{first} to {last} of {totalRecords}"
+                    paginatorLeft={paginatorLeft}
+                    paginatorRight={paginatorRight}
+                    filters={filters}
+                >
                     <Column field="animalCageName" header="Cage Name" />
                     <Column field="areaName" header="Area" />
                     <Column field="description" header="Description" />
                     <Column field="maxQuantity" header="Max Quantity" />
                     <Column
-                        style={{ width: '25%' }}
+                        style={{ width: '15%' }}
                         header="Actions"
                         body={(rowData) => (
-                            <div>
+                            <div className="p-d-flex p-ai-center">
                                 <Button
                                     icon="pi pi-trash"
-                                    className="p-button-rounded p-button-danger"
+                                    className="p-button-rounded p-button-danger p-mr-2"
                                     onClick={() => handleDeleteCage(rowData.animalCageId)}
                                 />
                                 <Button
@@ -211,80 +210,100 @@ const ManageCage = () => {
                                     onClick={() => openUpdateModal(rowData)}
                                 />
                             </div>
-                        )} />
-
+                        )}
+                    />
                 </DataTable>
             </div>
 
-            {/* Add Cage */}
+            {/* Add Cage Dialog */}
             <Dialog
                 header="Add Cage"
                 visible={displayDialog}
-                style={{ width: '800px' }}
+                style={{ width: '80%' }}
                 modal
                 onHide={() => setDisplayDialog(false)}
+                className="p-fluid"
             >
-                <div class="formgrid grid">
-                    <div className="field col-12 ">
+                <div className="p-grid p-fluid">
+                    <div className="p-col-12 p-md-6">
                         <label htmlFor="animalCageName">Cage Name</label>
-                        <br />
                         <InputText
                             id="animalCageName"
-                            className='w-full'
                             name="animalCageName"
                             value={newCage.animalCageName}
                             onChange={handleInputChange}
                         />
                     </div>
 
-                    <div className="field col-12">
-                        <label htmlFor="updateCatalogue">Area</label>
-                        <br />
+                    <div className="p-col-12 p-md-6">
+                        <label htmlFor="areaId">Area</label>
                         <Dropdown
                             value={selectedArea}
-                            onChange={(e) => handleSelectedChange(e, 'areaId')}
+                            onChange={handleSelectedChange}
                             options={areas}
-                            name='areaId'
-                            optionLabel='areaName'
-                            placeholder="Select a Area"
+                            optionLabel="areaName"
+                            placeholder="Select an Area"
                         />
                     </div>
 
-                    <div className="field col-12 ">
+                    <div className="p-col-12 p-md-6">
                         <label htmlFor="maxQuantity">Max Quantity</label>
-                        <br />
                         <InputText
                             id="maxQuantity"
-                            className='w-full'
                             name="maxQuantity"
-                            keyfilter="int"
                             value={newCage.maxQuantity}
                             onChange={handleInputChange}
                         />
                     </div>
 
-                    <div className="field col-12 ">
+                    <div className="p-col-12 p-md-6">
                         <label htmlFor="description">Description</label>
-                        <br />
                         <InputTextarea
                             id="description"
-                            className='w-full min-h-full'
                             name="description"
+                            rows={3}
                             value={newCage.description}
                             onChange={handleInputChange}
                         />
                     </div>
 
-                    <Button
-                        label="Add Cage"
-                        icon="pi pi-pencil"
-                        onClick={handleAddCage}
-                        className="p-button-primary mt-5"
-                    />
+                    <div className="p-col-12 p-d-flex p-jc-end">
+                        <Button
+                            label="Submit"
+                            icon="pi pi-check"
+                            className="p-button-success"
+                            onClick={handleAddCage}
+                        />
+                    </div>
                 </div>
-            </Dialog >
+            </Dialog>
 
-        </div >
+            {/* Confirmation Dialog */}
+            <Dialog
+                header="Confirmation"
+                visible={confirmationDialog.visible}
+                style={{ width: '400px' }}
+                modal
+                footer={
+                    <div className="p-d-flex p-jc-between">
+                        <Button label="No" icon="pi pi-times" className="p-button-text" onClick={() => setConfirmationDialog({ ...confirmationDialog, visible: false })} />
+                        <Button
+                            label="Yes"
+                            icon="pi pi-check"
+                            className="p-button-success"
+                            onClick={() => {
+                                confirmationDialog.action();
+                                setConfirmationDialog({ ...confirmationDialog, visible: false });
+                            }}
+                        />
+                    </div>
+                }
+                onHide={() => setConfirmationDialog({ ...confirmationDialog, visible: false })}
+            >
+                <p>{confirmationDialog.message}</p>
+            </Dialog>
+        </div>
     );
 };
+
 export default ManageCage;
